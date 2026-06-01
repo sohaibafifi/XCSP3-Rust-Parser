@@ -175,9 +175,45 @@ pub mod xcsp3_utils {
         }
 
         pub fn from_string(expression: &str) -> Self {
+            // `notin` is not a primitive operator here; rewrite `notin(A,B)` to
+            // `not(in(A,B))` (balanced) so the existing `not`/`in` handle it.
+            let expression = Self::rewrite_notin(expression);
             ExpressionTree {
-                root: ExpressionTree::parse(expression),
+                root: ExpressionTree::parse(&expression),
             }
+        }
+
+        /// Rewrite every `notin(…)` to `not(in(…))`, matching parentheses.
+        fn rewrite_notin(expression: &str) -> String {
+            let mut s = expression.to_string();
+            while let Some(pos) = s.find("notin(") {
+                let open = pos + 5; // index of '(' right after "notin"
+                let bytes = s.as_bytes();
+                let mut depth = 0i32;
+                let mut close = None;
+                for i in open..s.len() {
+                    match bytes[i] {
+                        b'(' => depth += 1,
+                        b')' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                close = Some(i);
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                match close {
+                    Some(c) => {
+                        // Edit the later index first so `pos` stays valid.
+                        s.replace_range(c..c + 1, "))");
+                        s.replace_range(pos..pos + 6, "not(in(");
+                    }
+                    None => break, // unbalanced; leave as-is
+                }
+            }
+            s
         }
 
         fn operator(exp: &str, stack: &mut Vec<TreeNode>) {

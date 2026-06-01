@@ -106,10 +106,8 @@ pub mod xcsp3_xml {
 
         /// read the instance from string
         pub fn from_string(string: &str) -> Result<XcspXmlModel, DeError> {
-            let now = Instant::now();
-            let r = from_str(string);
-            println!("read the instance by {} microseconds", now.elapsed().as_micros());
-            r
+            let _now = Instant::now();
+            from_str(string)
         }
 
         /// get the format of the instance: "XCSP3"
