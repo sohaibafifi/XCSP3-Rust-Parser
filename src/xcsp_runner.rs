@@ -33,7 +33,7 @@ use crate::objectives::xobjectives_set::xcsp3_core::XObjective;
 use crate::objectives::xobjectives_set::xcsp3_core::XObjective::{XObjectiveElement, XObjectiveExpression};
 use crate::utils::utils_functions::xcsp3_utils::get_all_variables_between_lower_and_upper;
 use crate::utils::utils_functions::{
-    is_int_list, is_var_list, scope_contains_expressions, to_expression_list, to_int_list, to_var_list,
+    is_int_list, is_var_list, scope_contains_expressions, to_expression_list, to_int_list, to_scope_list, to_var_list,
 };
 use crate::variables::xdomain::xcsp3_core::XDomainInteger;
 use crate::variables::xvariable_type::xcsp3_core::XVariableType;
@@ -288,16 +288,17 @@ impl XcspRunner {
             // LEx constraints
             //---------------------------------------------------------------------------------------------------
             XConstraintType::XLex(inner) => {
+                // `lex` tuples may mix variables and integer constants.
                 let mut lists = Vec::with_capacity(inner.lists().len());
                 for list in inner.lists().iter() {
-                    lists.push(to_var_list(list, inner.set()));
+                    lists.push(to_scope_list(list, inner.set()));
                 }
                 callback.on_constraint_lex(&lists, *inner.operator());
             }
             XConstraintType::XLexMatrix(inner) => {
                 let mut lists = Vec::with_capacity(inner.matrix().len());
                 for list in inner.matrix().iter() {
-                    lists.push(to_var_list(list, inner.set()));
+                    lists.push(to_scope_list(list, inner.set()));
                 }
                 callback.on_constraint_lex_matrix(&lists, *inner.operator());
             }

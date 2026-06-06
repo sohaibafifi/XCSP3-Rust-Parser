@@ -494,6 +494,25 @@ pub fn to_var_list(the_list: &[XVarVal], set: &XVariableSet) -> Vec<String> {
         .collect()
 }
 
+/// Like [`to_var_list`], but tolerates integer constants: variables expand to
+/// their scope while `IntVal` entries are emitted as their literal string.
+/// Used by tuple constraints (e.g. `lex`) whose lists may mix vars and ints.
+pub fn to_scope_list(the_list: &[XVarVal], set: &XVariableSet) -> Vec<String> {
+    let mut out = vec![];
+    for e in the_list {
+        match e {
+            XVarVal::IntVar(s) => {
+                for (vs, _vv) in set.construct_scope(&[&s]) {
+                    out.push(vs);
+                }
+            }
+            XVarVal::IntVal(v) => out.push(v.to_string()),
+            _ => panic!("Only vars or integers are allowed in this list: {}", e),
+        }
+    }
+    out
+}
+
 pub fn to_interval_list(the_list: &[XVarVal]) -> Vec<(i32, i32)> {
     let mut tmp = vec![];
     for v in the_list {
