@@ -33,8 +33,7 @@ use crate::objectives::xobjectives_set::xcsp3_core::XObjective;
 use crate::objectives::xobjectives_set::xcsp3_core::XObjective::{XObjectiveElement, XObjectiveExpression};
 use crate::utils::utils_functions::xcsp3_utils::get_all_variables_between_lower_and_upper;
 use crate::utils::utils_functions::{
-    is_int_list, is_interval_list, is_var_list, scope_contains_expressions, to_expression_list, to_int_list,
-    to_interval_list, to_var_list,
+    is_int_list, is_var_list, scope_contains_expressions, to_expression_list, to_int_list, to_scope_list, to_var_list,
 };
 use crate::variables::xdomain::xcsp3_core::XDomainInteger;
 use crate::variables::xvariable_type::xcsp3_core::XVariableType;
@@ -289,16 +288,17 @@ impl XcspRunner {
             // LEx constraints
             //---------------------------------------------------------------------------------------------------
             XConstraintType::XLex(inner) => {
+                // `lex` tuples may mix variables and integer constants.
                 let mut lists = Vec::with_capacity(inner.lists().len());
                 for list in inner.lists().iter() {
-                    lists.push(to_var_list(list, inner.set()));
+                    lists.push(to_scope_list(list, inner.set()));
                 }
                 callback.on_constraint_lex(&lists, *inner.operator());
             }
             XConstraintType::XLexMatrix(inner) => {
                 let mut lists = Vec::with_capacity(inner.matrix().len());
                 for list in inner.matrix().iter() {
-                    lists.push(to_var_list(list, inner.set()));
+                    lists.push(to_scope_list(list, inner.set()));
                 }
                 callback.on_constraint_lex_matrix(&lists, *inner.operator());
             }
@@ -446,32 +446,44 @@ impl XcspRunner {
             }
             XConstraintType::XCardinality(inner) => {
                 let scope: Vec<String> = to_var_list(&inner.scope(), &inner.set());
-                if is_int_list(inner.values()) && is_int_list(inner.occurs()) {
-                    let values = to_int_list(inner.values());
-                    let occurs = to_int_list(inner.occurs());
-                    callback.on_constraint_cardinality_v1(&*scope, &*values, &*occurs, inner.closed())
-                } else if is_int_list(inner.values()) && is_var_list(inner.occurs()) {
-                    let values = to_int_list(inner.values());
+                let occurs_have_var = inner
+                    .occurs()
+                    .iter()
+                    .any(|v| matches!(v, XVarVal::IntVar(_)));
+                let values_have_var = inner
+                    .values()
+                    .iter()
+                    .any(|v| matches!(v, XVarVal::IntVar(_)));
+                if occurs_have_var {
                     let occurs = to_var_list(inner.occurs(), inner.set());
-                    callback.on_constraint_cardinality_v2(&*scope, &*values, &*occurs, inner.closed())
-                } else if is_int_list(inner.values()) && is_interval_list(inner.occurs()) {
-                    let values = to_int_list(inner.values());
-                    let occurs = to_interval_list(inner.occurs());
-                    callback.on_constraint_cardinality_v3(&*scope, &*values, &*occurs, inner.closed())
-                } else if is_var_list(inner.values()) && is_int_list(inner.occurs()) {
-                    let values = to_var_list(inner.values(), inner.set());
-                    let occurs = to_int_list(inner.occurs());
-                    callback.on_constraint_cardinality_v4(&*scope, &*values, &*occurs, inner.closed())
-                } else if is_var_list(inner.values()) && is_var_list(inner.occurs()) {
-                    let values = to_var_list(inner.values(), inner.set());
-                    let occurs = to_var_list(inner.occurs(), inner.set());
-                    callback.on_constraint_cardinality_v5(&*scope, &*values, &*occurs, inner.closed())
-                } else if is_var_list(inner.values()) && is_interval_list(inner.occurs()) {
-                    let values = to_var_list(inner.values(), inner.set());
-                    let occurs = to_interval_list(inner.occurs());
-                    callback.on_constraint_cardinality_v6(&*scope, &*values, &*occurs, inner.closed())
+                    if values_have_var {
+                        let values = to_var_list(inner.values(), inner.set());
+                        callback.on_constraint_cardinality_v5(&*scope, &*values, &*occurs, inner.closed())
+                    } else {
+                        let values = to_int_list(inner.values());
+                        callback.on_constraint_cardinality_v2(&*scope, &*values, &*occurs, inner.closed())
+                    }
                 } else {
-                    panic!("Unexpected variant for cardinality constraint");
+                    // occurs are ints and/or intervals (possibly mixed): normalize
+                    // each to an interval pair (`k` -> `(k, k)`). Fixes the case
+                    // where `is_int_list` mis-classifies a list whose first entry
+                    // is an int but which also holds an interval.
+                    let occurs: Vec<(i32, i32)> = inner
+                        .occurs()
+                        .iter()
+                        .map(|v| match v {
+                            XVarVal::IntVal(k) => (*k, *k),
+                            XVarVal::IntInterval(a, b) => (*a, *b),
+                            _ => (0, 0),
+                        })
+                        .collect();
+                    if values_have_var {
+                        let values = to_var_list(inner.values(), inner.set());
+                        callback.on_constraint_cardinality_v6(&*scope, &*values, &*occurs, inner.closed())
+                    } else {
+                        let values = to_int_list(inner.values());
+                        callback.on_constraint_cardinality_v3(&*scope, &*values, &*occurs, inner.closed())
+                    }
                 }
             }
             //---------------------------------------------------------------------------------------------------
@@ -601,7 +613,6 @@ impl XcspRunner {
             XConstraintType::XCumulative(inner) => match inner.ends() {
                 None => {
                     if is_int_list(inner.lengths()) && is_int_list(inner.heights()) {
-                        println!("{:?}", inner.scope());
                         let tmp = to_var_list(inner.scope(), inner.set());
                         let lengths = to_int_list(inner.lengths());
                         let heights = to_int_list(inner.heights());

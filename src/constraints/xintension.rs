@@ -41,8 +41,13 @@ pub mod xcsp3_core {
 
     impl XConstraintUnfold for XIntention<'_> {
         fn extract_parameters(&mut self, arg: &[XVarVal]) {
-            for index in 0..arg.len() {
-                self.expression = self.expression.replace(&format!("%{}", index), arg[index].to_string().as_str());
+            // Replace in DESCENDING index order: a plain `replace("%2", ..)` also
+            // matches the `%2` prefix of `%20`..`%29`, so higher indices must be
+            // substituted first (otherwise `%20` becomes `<arg2>0`).
+            for index in (0..arg.len()).rev() {
+                self.expression = self
+                    .expression
+                    .replace(&format!("%{}", index), arg[index].to_string().as_str());
             }
         }
         fn max_args_used(&self) -> i32 {

@@ -494,6 +494,25 @@ pub fn to_var_list(the_list: &[XVarVal], set: &XVariableSet) -> Vec<String> {
         .collect()
 }
 
+/// Like [`to_var_list`], but tolerates integer constants: variables expand to
+/// their scope while `IntVal` entries are emitted as their literal string.
+/// Used by tuple constraints (e.g. `lex`) whose lists may mix vars and ints.
+pub fn to_scope_list(the_list: &[XVarVal], set: &XVariableSet) -> Vec<String> {
+    let mut out = vec![];
+    for e in the_list {
+        match e {
+            XVarVal::IntVar(s) => {
+                for (vs, _vv) in set.construct_scope(&[&s]) {
+                    out.push(vs);
+                }
+            }
+            XVarVal::IntVal(v) => out.push(v.to_string()),
+            _ => panic!("Only vars or integers are allowed in this list: {}", e),
+        }
+    }
+    out
+}
+
 pub fn to_interval_list(the_list: &[XVarVal]) -> Vec<(i32, i32)> {
     let mut tmp = vec![];
     for v in the_list {
@@ -507,14 +526,27 @@ pub fn to_interval_list(the_list: &[XVarVal]) -> Vec<(i32, i32)> {
     tmp
 }
 
-pub fn to_expression_list(the_list: &[XVarVal], _set: &XVariableSet) -> Vec<ExpressionTree> {
+pub fn to_expression_list(the_list: &[XVarVal], set: &XVariableSet) -> Vec<ExpressionTree> {
     let mut trees = vec![];
 
     for v in the_list {
         match v {
             XVarVal::IntVar(expr) => {
-                let tree = ExpressionTree::from_string(expr);
-                trees.push(tree);
+                // A leaf variable reference (no operator '(') may denote a whole
+                // array `a[]` or a slice `a[2..4]`; expand it against the variable
+                // set so each scalar variable becomes its own term, keeping the
+                // term count aligned with the coefficient list. Operator
+                // expressions like `eq(x,y)` stay a single tree, and non-identifier
+                // leaves (constants, `%N` group placeholders) are parsed directly.
+                if !expr.contains('(')
+                    && expr.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_')
+                {
+                    for (id, _dom) in set.construct_scope(&[expr]) {
+                        trees.push(ExpressionTree::from_string(&id));
+                    }
+                } else {
+                    trees.push(ExpressionTree::from_string(expr));
+                }
             }
             _ => panic!("Only IntVar expressions are allowed in this list"),
         }
